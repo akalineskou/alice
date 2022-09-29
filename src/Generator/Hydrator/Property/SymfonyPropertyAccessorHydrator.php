@@ -24,6 +24,9 @@ use Nelmio\Alice\Throwable\Exception\Generator\Hydrator\HydrationExceptionFactor
 use Nelmio\Alice\Throwable\Exception\Generator\Hydrator\InaccessiblePropertyException;
 use Nelmio\Alice\Throwable\Exception\Generator\Hydrator\InvalidArgumentException;
 use Nelmio\Alice\Throwable\Exception\Generator\Hydrator\NoSuchPropertyException;
+use ReflectionEnum;
+use ReflectionException;
+use ReflectionProperty;
 use Symfony\Component\PropertyAccess\Exception\AccessException as SymfonyAccessException;
 use Symfony\Component\PropertyAccess\Exception\ExceptionInterface as SymfonyPropertyAccessException;
 use Symfony\Component\PropertyAccess\Exception\InvalidArgumentException as SymfonyInvalidArgumentException;
@@ -54,6 +57,23 @@ final class SymfonyPropertyAccessorHydrator implements PropertyHydratorInterface
     public function hydrate(ObjectInterface $object, Property $property, GenerationContext $context): ObjectInterface
     {
         $instance = $object->getInstance();
+
+        // check if property is an enum (might not have a type)
+        try {
+            $reflectionType = (new ReflectionProperty($instance, $property->getName()))->getType();
+
+            if (null !== $reflectionType && enum_exists($reflectionType->getName())) {
+                foreach ((new ReflectionEnum($reflectionType->getName()))->getCases() as $reflectionCase) {
+                    if ($property->getValue() === $reflectionCase->getValue()->value ?? $reflectionCase->getValue()->name) {
+                        $property = $property->withValue($reflectionCase->getValue());
+
+                        break;
+                    }
+                }
+            }
+        } catch (ReflectionException) {
+            // property might not exist
+        }
 
         try {
             $this->propertyAccessor->setValue($instance, $property->getName(), $property->getValue());
